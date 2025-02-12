@@ -1,0 +1,35 @@
+[
+build-system
+]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[
+project
+]
+name = "kollel-scholarship-manager"
+version = "1.0.0"
+authors = [
+  { name="Batya Zilberberg", email="batya21194@gmail.com" },
+]
+description = "A modern desktop application for managing Kollel student scholarships"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[
+project.dependencies
+]
+pandas = "^2.0.0"
+openpyxl = "^3.1.0"
+customtkinter = "^5.2.0"
+CTkMessagebox = "^2.5"
+
+[
+project.urls
+]
+"Homepage" = "https://github.com/Batya19/kollel-scholarship-manager"
