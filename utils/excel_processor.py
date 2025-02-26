@@ -39,9 +39,9 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
 
         df['סך שעות'] = df['יציאה'] - df['כניסה']
         df['תאריך'] = df['כניסה'].dt.date
-        df['שעת_כניסה'] = df['כניסה'].dt.time
-        df['שעת_יציאה'] = df['יציאה'].dt.time
-        df['סדר'] = df['שעת_כניסה'].apply(lambda x: 'בוקר' if x.hour < 12 else 'צהריים')
+        df['שעת כניסה'] = df['כניסה'].dt.time
+        df['שעת יציאה'] = df['יציאה'].dt.time
+        df['סדר'] = df['שעת כניסה'].apply(lambda x: 'בוקר' if x.hour < 12 else 'צהריים')
 
         calculator = KollelScholarship()
         results = [
@@ -55,7 +55,7 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
         for col in manual_columns:
             results_df[col] = ''
 
-        results_df['תוספת_דרגה_1'] = results_df.apply(
+        results_df['תוספת דרגה 1'] = results_df.apply(
             lambda row: 190 if (
                     row['בוקר_missed_hours'] <= 7.0 and
                     row['צהריים_missed_hours'] <= 6.0 and
@@ -63,9 +63,9 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
             ) else 0,
             axis=1
         )
-        results_df['סיבה - תוספת דרגה 1'] = ''
+        results_df['אנס דרגה 1'] = ''
 
-        results_df['תוספת_דרגה_2'] = results_df.apply(
+        results_df['תוספת דרגה 2'] = results_df.apply(
             lambda row: 200 if (
                     row['בוקר_missed_hours'] <= 3.0 and
                     row['צהריים_missed_hours'] <= 2.0 and
@@ -73,9 +73,9 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
             ) else 0,
             axis=1
         )
-        results_df['סיבה - תוספת דרגה 2'] = ''
+        results_df['אנס דרגה 2'] = ''
 
-        results_df['נוכחות_מושלמת'] = results_df.apply(
+        results_df['נוכחות מושלמת'] = results_df.apply(
             lambda row: 200 if (
                     row['בוקר_absent_days'] == 0 and
                     row['בוקר_late_days'] == 0 and
@@ -85,10 +85,10 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
             ) else 0,
             axis=1
         )
-        results_df['סיבה - נוכחות מושלמת'] = ''
+        results_df['אנס נוכחות מושלמת'] = ''
 
-        results_df['הגעה_מוקדמת'] = results_df['בונוס_נוכחות_מוקדמת']
-        results_df['סיבה - הגעה מוקדמת'] = ''
+        results_df['הגעה מוקדמת'] = results_df['תוספת נוכחות מוקדמת']
+        results_df['אנס הגעה מוקדמת'] = ''
 
         results_df['סך סופי'] = 0
 
@@ -100,7 +100,7 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
         headers = [cell.value for cell in ws[1]]
 
         try:
-            total_col = get_column_letter(headers.index('סך_הכל') + 1)
+            total_col = get_column_letter(headers.index('סך הכל') + 1)
 
             chabura_col = get_column_letter(headers.index('חבורה') + 1)
             musar_col = get_column_letter(headers.index('מוסר') + 1)
@@ -108,17 +108,17 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
             halacha_col = get_column_letter(headers.index('מבחן הלכה') + 1)
             shas_col = get_column_letter(headers.index('מבחן שס') + 1)
 
-            tier1_col = get_column_letter(headers.index('תוספת_דרגה_1') + 1)
-            tier1_reason_col = get_column_letter(headers.index('סיבה - תוספת דרגה 1') + 1)
+            tier1_col = get_column_letter(headers.index('תוספת דרגה 1') + 1)
+            tier1_reason_col = get_column_letter(headers.index('אנס דרגה 1') + 1)
 
-            tier2_col = get_column_letter(headers.index('תוספת_דרגה_2') + 1)
-            tier2_reason_col = get_column_letter(headers.index('סיבה - תוספת דרגה 2') + 1)
+            tier2_col = get_column_letter(headers.index('תוספת דרגה 2') + 1)
+            tier2_reason_col = get_column_letter(headers.index('אנס דרגה 2') + 1)
 
-            perfect_col = get_column_letter(headers.index('נוכחות_מושלמת') + 1)
-            perfect_reason_col = get_column_letter(headers.index('סיבה - נוכחות מושלמת') + 1)
+            perfect_col = get_column_letter(headers.index('נוכחות מושלמת') + 1)
+            perfect_reason_col = get_column_letter(headers.index('אנס נוכחות מושלמת') + 1)
 
-            early_col = get_column_letter(headers.index('הגעה_מוקדמת') + 1)
-            early_reason_col = get_column_letter(headers.index('סיבה - הגעה מוקדמת') + 1)
+            early_col = get_column_letter(headers.index('הגעה מוקדמת') + 1)
+            early_reason_col = get_column_letter(headers.index('אנס הגעה מוקדמת') + 1)
 
             final_col = get_column_letter(headers.index('סך סופי') + 1)
         except ValueError as e:

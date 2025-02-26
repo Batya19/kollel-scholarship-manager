@@ -44,20 +44,44 @@ class KollelScholarship:
        criteria including punctuality, consistency, and study session participation.
     """
 
-    def _parse_time(self, time_str: str) -> time:
+    def _parse_time(self, time_str):
         """
-            Convert string time representation to time object.
-
-            Args:
-                time_str (str): Time string to parse
-
-            Returns:
-                time: Parsed time object
+        Convert string time representation to time object.
+        Handles various input types including NaT values.
         """
-        if isinstance(time_str, str):
-            dt = pd.to_datetime(time_str).time()
-            return dt
-        return time_str
+        try:
+            # טיפול במקרה של NaT (Not a Time)
+            if pd.isna(time_str) or time_str is pd.NaT:
+                return time(0, 0)
+
+            if isinstance(time_str, str):
+                try:
+                    dt = pd.to_datetime(time_str).time()
+                    return dt
+                except:
+                    print(f"Failed to parse time string: {time_str}")
+                    return time(0, 0)
+            elif isinstance(time_str, float):
+                # טיפול במספרים עשרוניים שמייצגים זמן בפורמט אקסל
+                if pd.isna(time_str):  # אם הערך הוא NaN
+                    return time(0, 0)
+                # אקסל מאחסן זמן כשבר של 24 שעות
+                total_seconds = int(time_str * 86400)  # 24*60*60 שניות
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                return time(hours % 24, minutes, seconds)
+            elif isinstance(time_str, datetime):
+                # במקרה שמגיע אובייקט datetime, נחלץ ממנו את ה-time
+                return time_str.time()
+            elif hasattr(time_str, 'hour'):  # בדוק אם זה כבר אובייקט time
+                return time_str
+            else:
+                print(f"Unknown time format: {time_str}, type: {type(time_str)}")
+                return time(0, 0)
+        except Exception as e:
+            print(f"Error in _parse_time: {time_str}, type: {type(time_str)}, error: {e}")
+            return time(0, 0)
 
     def _calculate_session_hours(self, entry_time: time, exit_time: time, session_type: str) -> float:
 
@@ -72,6 +96,7 @@ class KollelScholarship:
                 Returns:
                     float: Calculated hours attended, rounded to 2 decimal places
         """
+
         def to_minutes(t: time) -> int:
             return t.hour * 60 + t.minute
 
@@ -141,19 +166,19 @@ class KollelScholarship:
         config = MORNING_CONFIG if session_type == 'בוקר' else AFTERNOON_CONFIG
 
         session_data = session_data.copy()
-        session_data['שעת_כניסה'] = session_data['שעת_כניסה'].apply(self._parse_time)
-        session_data['שעת_יציאה'] = session_data['שעת_יציאה'].apply(self._parse_time)
+        session_data['שעת כניסה'] = session_data['שעת כניסה'].apply(self._parse_time)
+        session_data['שעת יציאה'] = session_data['שעת יציאה'].apply(self._parse_time)
 
         daily_stats = session_data.groupby('תאריך').agg({
-            'שעת_כניסה': 'min',
-            'שעת_יציאה': 'max',
+            'שעת כניסה': 'min',
+            'שעת יציאה': 'max',
             'רצופות': lambda x: 'כן' in x.values
         })
 
         daily_stats['סך שעות'] = daily_stats.apply(
             lambda row: self._calculate_session_hours(
-                row['שעת_כניסה'],
-                row['שעת_יציאה'],
+                row['שעת כניסה'],
+                row['שעת יציאה'],
                 session_type
             ),
             axis=1
@@ -169,13 +194,13 @@ class KollelScholarship:
         perfect_start = self._parse_time(config['PERFECT_START'])
         session_end = config['END']
 
-        late_mask = daily_stats['שעת_כניסה'].apply(lambda x: compare_times(x, late_threshold)) & \
-                    daily_stats['שעת_כניסה'].apply(lambda x: not compare_times(x, very_late_threshold))
-        very_late_mask = daily_stats['שעת_כניסה'].apply(lambda x: compare_times(x, very_late_threshold))
+        late_mask = daily_stats['שעת כניסה'].apply(lambda x: compare_times(x, late_threshold)) & \
+                    daily_stats['שעת כניסה'].apply(lambda x: not compare_times(x, very_late_threshold))
+        very_late_mask = daily_stats['שעת כניסה'].apply(lambda x: compare_times(x, very_late_threshold))
 
         perfect_mask = (
-                daily_stats['שעת_כניסה'].apply(lambda x: not compare_times(x, perfect_start)) &
-                daily_stats['שעת_יציאה'].apply(lambda x: compare_times(x, config['END'])) &
+                daily_stats['שעת כניסה'].apply(lambda x: not compare_times(x, perfect_start)) &
+                daily_stats['שעת יציאה'].apply(lambda x: compare_times(x, config['END'])) &
                 daily_stats['רצופות']
         )
 
@@ -201,7 +226,7 @@ class KollelScholarship:
         early_attendance_bonus = 0
         if session_type == 'בוקר':
             nine_am = time(9, 0)
-            late_after_nine = sum(compare_times(t, nine_am) for t in daily_stats['שעת_כניסה'])
+            late_after_nine = sum(compare_times(t, nine_am) for t in daily_stats['שעת כניסה'])
 
             if late_after_nine <= 1:
                 early_attendance_bonus = 200 if has_afternoon else 100
@@ -250,10 +275,10 @@ class KollelScholarship:
         weekly_lates = (
             attendance_data
             .groupby('week')
-            .agg({'שעת_כניסה': lambda x: sum(is_late(t) for t in x)})
+            .agg({'שעת כניסה': lambda x: sum(is_late(t) for t in x)})
         )
 
-        good_weeks = sum(weekly_lates['שעת_כניסה'] <= 1)
+        good_weeks = sum(weekly_lates['שעת כניסה'] <= 1)
         return good_weeks * 35
 
     def calculate_student_scholarship(self, student_data: pd.DataFrame, working_days: int) -> Dict:
@@ -300,12 +325,12 @@ class KollelScholarship:
                 total_bonus += BONUS_CONFIG['PERFECT_ATTENDANCE']
 
         return {
-            'זהות': student_data['זהות'].iloc[0],
+            'מספר זהות': student_data['זהות'].iloc[0],
             'שם מלא': f"{student_data['שם פרטי'].iloc[0]} {student_data['שם משפחה'].iloc[0]}",
-            'מלגת_בסיס': total_base,
-            'בונוסים': total_bonus,
-            'בונוס_נוכחות_מוקדמת': morning_stats.early_attendance_bonus,
-            'סך_הכל': total_base + total_bonus + morning_stats.early_attendance_bonus,
+            'מלגת בסיס': total_base,
+            'תוספות': total_bonus,
+            'תוספת נוכחות מוקדמת': morning_stats.early_attendance_bonus,
+            'סך הכל': total_base + total_bonus + morning_stats.early_attendance_bonus,
             **{f'בוקר_{k}': v for k, v in vars(morning_stats).items()},
             **{f'צהריים_{k}': v for k, v in vars(afternoon_stats).items()}
         }
