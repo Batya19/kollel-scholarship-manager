@@ -50,7 +50,6 @@ class KollelScholarship:
         Handles various input types including NaT values.
         """
         try:
-            # טיפול במקרה של NaT (Not a Time)
             if pd.isna(time_str) or time_str is pd.NaT:
                 return time(0, 0)
 
@@ -62,19 +61,16 @@ class KollelScholarship:
                     print(f"Failed to parse time string: {time_str}")
                     return time(0, 0)
             elif isinstance(time_str, float):
-                # טיפול במספרים עשרוניים שמייצגים זמן בפורמט אקסל
-                if pd.isna(time_str):  # אם הערך הוא NaN
+                if pd.isna(time_str):
                     return time(0, 0)
-                # אקסל מאחסן זמן כשבר של 24 שעות
-                total_seconds = int(time_str * 86400)  # 24*60*60 שניות
+                total_seconds = int(time_str * 86400)
                 hours = total_seconds // 3600
                 minutes = (total_seconds % 3600) // 60
                 seconds = total_seconds % 60
                 return time(hours % 24, minutes, seconds)
             elif isinstance(time_str, datetime):
-                # במקרה שמגיע אובייקט datetime, נחלץ ממנו את ה-time
                 return time_str.time()
-            elif hasattr(time_str, 'hour'):  # בדוק אם זה כבר אובייקט time
+            elif hasattr(time_str, 'hour'):
                 return time_str
             else:
                 print(f"Unknown time format: {time_str}, type: {type(time_str)}")

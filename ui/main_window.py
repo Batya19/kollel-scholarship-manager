@@ -3,6 +3,7 @@ from tkinter import filedialog
 from CTkMessagebox import CTkMessagebox
 from .dialog import ModernDialog
 from utils.excel_processor import process_kollel_attendance
+import pandas as pd
 
 
 class ModernKollelUI:
@@ -68,6 +69,36 @@ class ModernKollelUI:
         )
         self.btn_exit.pack(pady=20)
 
+    def _get_output_filename(self, input_file: str) -> str:
+        """
+        Generate output filename based on the input file's date data.
+
+        Args:
+            input_file (str): Path to input Excel file
+
+        Returns:
+            str: Generated output filename with month and year
+        """
+        try:
+            df = pd.read_excel(input_file)
+            df['כניסה'] = pd.to_datetime(df['כניסה'])
+            first_date = df['כניסה'].iloc[0]
+
+            month_number = first_date.month
+            year = first_date.year
+
+            month_names = {
+                1: "ינואר", 2: "פברואר", 3: "מרץ", 4: "אפריל",
+                5: "מאי", 6: "יוני", 7: "יולי", 8: "אוגוסט",
+                9: "ספטמבר", 10: "אוקטובר", 11: "נובמבר", 12: "דצמבר"
+            }
+
+            month_name = month_names.get(month_number, str(month_number))
+            return f"מלגות חודשיות {month_name} {year}.xlsx"
+
+        except Exception:
+            return "מלגות חודשיות.xlsx"
+
     def open_file(self):
         filepath = filedialog.askopenfilename(
             filetypes=[("Excel files", "*.xlsx")],
@@ -80,11 +111,13 @@ class ModernKollelUI:
 
             if dialog.result is not None:
                 working_days = dialog.result
+                output_filename = self._get_output_filename(filepath)
+
                 try:
-                    if process_kollel_attendance(filepath, "מלגות חודשיות.xlsx", working_days):
+                    if process_kollel_attendance(filepath, output_filename, working_days):
                         CTkMessagebox(
                             title="הצלחה",
-                            message="החישוב הסתיים! הקובץ 'מלגות חודשיות.xlsx' נשמר.",
+                            message=f"החישוב הסתיים! הקובץ '{output_filename}' נשמר.",
                             icon="check",
                             fade_in_duration=1
                         )

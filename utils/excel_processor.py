@@ -37,6 +37,19 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
         for col in ['כניסה', 'יציאה']:
             df[col] = pd.to_datetime(df[col])
 
+        first_date = df['כניסה'].iloc[0]
+        month_number = first_date.month
+        year = first_date.year
+
+        month_names = {
+            1: "ינואר", 2: "פברואר", 3: "מרץ", 4: "אפריל",
+            5: "מאי", 6: "יוני", 7: "יולי", 8: "אוגוסט",
+            9: "ספטמבר", 10: "אוקטובר", 11: "נובמבר", 12: "דצמבר"
+        }
+
+        month_name = month_names.get(month_number, str(month_number))
+        output_file = f"מלגות חודשיות {month_name} {year}.xlsx"
+
         df['סך שעות'] = df['יציאה'] - df['כניסה']
         df['תאריך'] = df['כניסה'].dt.date
         df['שעת כניסה'] = df['כניסה'].dt.time
@@ -51,7 +64,13 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
 
         results_df = pd.DataFrame(results)
 
-        manual_columns = ['חבורה', 'מוסר', 'סיכומים', 'מבחן הלכה', 'מבחן שס']
+        manual_columns = [
+            'ציון חבורה', 'חבורה',
+            'ציון מוסר', 'מוסר',
+            'ציון סיכומים', 'סיכומים',
+            'ציון מבחן הלכה', 'מבחן הלכה',
+            'ציון מבחן שס', 'מבחן שס'
+        ]
         for col in manual_columns:
             results_df[col] = ''
 
@@ -102,6 +121,12 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
         try:
             total_col = get_column_letter(headers.index('סך הכל') + 1)
 
+            chabura_grade_col = get_column_letter(headers.index('ציון חבורה') + 1)
+            musar_grade_col = get_column_letter(headers.index('ציון מוסר') + 1)
+            sikumim_grade_col = get_column_letter(headers.index('ציון סיכומים') + 1)
+            halacha_grade_col = get_column_letter(headers.index('ציון מבחן הלכה') + 1)
+            shas_grade_col = get_column_letter(headers.index('ציון מבחן שס') + 1)
+
             chabura_col = get_column_letter(headers.index('חבורה') + 1)
             musar_col = get_column_letter(headers.index('מוסר') + 1)
             sikumim_col = get_column_letter(headers.index('סיכומים') + 1)
@@ -125,17 +150,32 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
             raise ValueError(f"לא נמצאה אחת העמודות הנדרשות: {str(e)}")
 
         for row in range(2, ws.max_row + 1):
+            ws[
+                f'{chabura_col}{row}'] = f'=IF(ISNUMBER({chabura_grade_col}{row}),IF({chabura_grade_col}{row}>=96,150,ROUND(150*{chabura_grade_col}{row}/100,0)),"")'
+
+            ws[
+                f'{musar_col}{row}'] = f'=IF(ISNUMBER({musar_grade_col}{row}),IF({musar_grade_col}{row}>=96,100,ROUND(100*{musar_grade_col}{row}/100,0)),"")'
+
+            ws[
+                f'{sikumim_col}{row}'] = f'=IF(ISNUMBER({sikumim_grade_col}{row}),IF({sikumim_grade_col}{row}>=96,150,ROUND(150*{sikumim_grade_col}{row}/100,0)),"")'
+
+            ws[
+                f'{halacha_col}{row}'] = f'=IF(ISNUMBER({halacha_grade_col}{row}),IF({halacha_grade_col}{row}>=96,200,ROUND(200*{halacha_grade_col}{row}/100,0)),"")'
+
+            ws[
+                f'{shas_col}{row}'] = f'=IF(ISNUMBER({shas_grade_col}{row}),IF({shas_grade_col}{row}>=96,390,ROUND(390*{shas_grade_col}{row}/100,0)),"")'
+
             formula = (
                 f'={total_col}{row}+'
-                f'IF({chabura_col}{row}="V",150,0)+'
-                f'IF({musar_col}{row}="V",100,0)+'
-                f'IF({sikumim_col}{row}="V",150,0)+'
-                f'IF({halacha_col}{row}="V",200,0)+'
-                f'IF({shas_col}{row}="V",390,0)+'
-                f'IF(AND({tier1_reason_col}{row}="V",{tier1_col}{row}=0),190,0)+'
-                f'IF(AND({tier2_reason_col}{row}="V",{tier2_col}{row}=0),200,0)+'
-                f'IF(AND({perfect_reason_col}{row}="V",{perfect_col}{row}=0),200,0)+'
-                f'IF(AND({early_reason_col}{row}="V",{early_col}{row}=0),200,0)'
+                f'IF(ISNUMBER({chabura_col}{row}),{chabura_col}{row},0)+'
+                f'IF(ISNUMBER({musar_col}{row}),{musar_col}{row},0)+'
+                f'IF(ISNUMBER({sikumim_col}{row}),{sikumim_col}{row},0)+'
+                f'IF(ISNUMBER({halacha_col}{row}),{halacha_col}{row},0)+'
+                f'IF(ISNUMBER({shas_col}{row}),{shas_col}{row},0)+'
+                f'IF(AND({tier1_reason_col}{row}<>"",{tier1_reason_col}{row}<>0),IF({tier1_col}{row}=0,190,{tier1_col}{row}),{tier1_col}{row})+'
+                f'IF(AND({tier2_reason_col}{row}<>"",{tier2_reason_col}{row}<>0),IF({tier2_col}{row}=0,200,{tier2_col}{row}),{tier2_col}{row})+'
+                f'IF(AND({perfect_reason_col}{row}<>"",{perfect_reason_col}{row}<>0),IF({perfect_col}{row}=0,200,{perfect_col}{row}),{perfect_col}{row})+'
+                f'IF(AND({early_reason_col}{row}<>"",{early_reason_col}{row}<>0),IF({early_col}{row}=0,200,{early_col}{row}),{early_col}{row})'
             )
             ws[f'{final_col}{row}'] = formula
 
