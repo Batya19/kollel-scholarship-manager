@@ -56,12 +56,13 @@ class ModernDialog(ctk.CTkToplevel):
         )
         self.button.pack(pady=20)
 
-        self.entry.focus()
-
         self.bind('<Return>', lambda e: self.ok_click())
 
         self.transient(parent)
         self.grab_set()
+        
+        # Set focus to entry after window is fully created
+        self.after(100, lambda: self.entry.focus_force())
 
     def ok_click(self):
         try:

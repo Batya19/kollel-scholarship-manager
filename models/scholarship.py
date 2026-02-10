@@ -165,6 +165,14 @@ class KollelScholarship:
         session_data['שעת כניסה'] = session_data['שעת כניסה'].apply(self._parse_time)
         session_data['שעת יציאה'] = session_data['שעת יציאה'].apply(self._parse_time)
 
+        # סנן ימים ללא זמן יציאה תקין (00:00 = לא החתים יציאה)
+        # ימים אלו לא יחשבו בכלל - כאילו האברך לא היה נוכח
+        session_data = session_data[session_data['שעת יציאה'] != time(0, 0)]
+        
+        # אם אחרי הסינון אין נתונים - החזר סטטיסטיקה ריקה
+        if session_data.empty:
+            return self._get_empty_stats(working_days, session_type)
+
         daily_stats = session_data.groupby('תאריך').agg({
             'שעת כניסה': 'min',
             'שעת יציאה': 'max',
@@ -211,7 +219,11 @@ class KollelScholarship:
         total_hours = min(daily_stats['סך שעות'].sum(), expected_hours)
         missed_hours = max(0, expected_hours - total_hours)
 
-        if late_days > 2:
+        # חשב היעדרויות
+        absent_days = working_days - attended_days
+
+        # מלגת בסיס מלאה רק אם: עד 2 איחורים AND עד 2 היעדרויות
+        if late_days > 2 or absent_days > 2:
             base = attended_days * config['LATE_DAILY_RATE']
         else:
             base = config['BASE']
@@ -224,11 +236,14 @@ class KollelScholarship:
             nine_am = time(9, 0)
             late_after_nine = sum(compare_times(t, nine_am) for t in daily_stats['שעת כניסה'])
 
-            if late_after_nine <= 1:
-                early_attendance_bonus = 200 if has_afternoon else 100
-            else:
-                weekly_bonus = self._calculate_weekly_early_attendance(session_data)
-                early_attendance_bonus = min(weekly_bonus, 200 if has_afternoon else 100)
+            # בונוס הגעה מוקדמת רק עם עד 2 היעדרויות
+            if absent_days <= 2:
+                if late_after_nine <= 1:
+                    early_attendance_bonus = 200 if has_afternoon else 100
+                else:
+                    weekly_bonus = self._calculate_weekly_early_attendance(session_data)
+                    early_attendance_bonus = min(weekly_bonus, 200 if has_afternoon else 100)
+            # אם יותר מ-2 היעדרויות - אין בונוס הגעה מוקדמת בכלל
 
         return SessionStats(
             base=max(0, base),
@@ -296,6 +311,15 @@ class KollelScholarship:
                 - Session-specific statistics
                 - Total scholarship amount
         """
+        # זהה ימים בלי זמן יציאה תקין
+        warnings = []
+        student_data_copy = student_data.copy()
+        student_data_copy['שעת יציאה_parsed'] = student_data_copy['שעת יציאה'].apply(self._parse_time)
+        missing_exit_days = len(student_data_copy[student_data_copy['שעת יציאה_parsed'] == time(0, 0)])
+        
+        if missing_exit_days > 0:
+            warnings.append(f"⚠️ {missing_exit_days} ימים ללא זמן יציאה (לא נספרו)")
+        
         morning_data = student_data[student_data['סדר'] == 'בוקר']
         afternoon_data = student_data[student_data['סדר'] == 'צהריים']
 
@@ -303,6 +327,29 @@ class KollelScholarship:
 
         morning_stats = self.calculate_session_stats(morning_data, 'בוקר', working_days, has_afternoon)
         afternoon_stats = self.calculate_session_stats(afternoon_data, 'צהריים', working_days, has_afternoon)
+
+        # הוסף התראות על פסילת מלגת בסיס
+        if not morning_data.empty and (morning_stats.late_days > 2 or morning_stats.absent_days > 2):
+            reasons = []
+            if morning_stats.late_days > 2:
+                reasons.append(f"{morning_stats.late_days} איחורים בבוקר")
+            if morning_stats.absent_days > 2:
+                reasons.append(f"{morning_stats.absent_days} היעדרויות בבוקר")
+            warnings.append(f"❌ מלגת בסיס בוקר בוטלה ({', '.join(reasons)})")
+        
+        if not afternoon_data.empty and (afternoon_stats.late_days > 2 or afternoon_stats.absent_days > 2):
+            reasons = []
+            if afternoon_stats.late_days > 2:
+                reasons.append(f"{afternoon_stats.late_days} איחורים בצהריים")
+            if afternoon_stats.absent_days > 2:
+                reasons.append(f"{afternoon_stats.absent_days} היעדרויות בצהריים")
+            warnings.append(f"❌ מלגת בסיס צהריים בוטלה ({', '.join(reasons)})")
+        
+        # התראה על פסילת בונוס הגעה מוקדמת
+        if not morning_data.empty:
+            max_bonus = 200 if has_afternoon else 100
+            if morning_stats.early_attendance_bonus < max_bonus and morning_stats.absent_days > 2:
+                warnings.append(f"⚠️ בונוס הגעה מוקדמת מופחת ({morning_stats.absent_days} היעדרויות)")
 
         total_base = morning_stats.base + afternoon_stats.base
         total_bonus = morning_stats.bonus + afternoon_stats.bonus
@@ -327,6 +374,7 @@ class KollelScholarship:
             'תוספות': total_bonus,
             'תוספת נוכחות מוקדמת': morning_stats.early_attendance_bonus,
             'סך הכל': total_base + total_bonus + morning_stats.early_attendance_bonus,
+            'התראות': ' | '.join(warnings) if warnings else '',
             **{f'בוקר_{k}': v for k, v in vars(morning_stats).items()},
             **{f'צהריים_{k}': v for k, v in vars(afternoon_stats).items()}
         }

@@ -3,6 +3,8 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from models.scholarship import KollelScholarship
+from utils.attendance_details import add_detailed_sheets
+from utils.summary_formatter import format_summary_sheet
 
 
 def process_kollel_attendance(input_file: str, output_file: str, working_days: int) -> bool:
@@ -64,16 +66,7 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
 
         results_df = pd.DataFrame(results)
 
-        manual_columns = [
-            'ציון חבורה', 'חבורה',
-            'ציון מוסר', 'מוסר',
-            'ציון סיכומים', 'סיכומים',
-            'ציון מבחן הלכה', 'מבחן הלכה',
-            'ציון מבחן שס', 'מבחן שס'
-        ]
-        for col in manual_columns:
-            results_df[col] = ''
-
+        # חשב תוספות חודשיות לפני שמוחקים את העמודות הסטטיסטיות
         results_df['תוספת דרגה 1'] = results_df.apply(
             lambda row: 190 if (
                     row['בוקר_missed_hours'] <= 7.0 and
@@ -109,12 +102,38 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
         results_df['הגעה מוקדמת'] = results_df['תוספת נוכחות מוקדמת']
         results_df['אנס הגעה מוקדמת'] = ''
 
+        # עכשיו הסר עמודות סטטיסטיקה מפורטות (בוקר_, צהריים_) - הן רק מבלבלות בסיכום
+        # וגם הסר "תוספת נוכחות מוקדמת" כי יש לנו "הגעה מוקדמת" (זה אותו דבר!)
+        stats_cols_to_remove = [col for col in results_df.columns 
+                                if col.startswith('בוקר_') or col.startswith('צהריים_') 
+                                or col == 'תוספת נוכחות מוקדמת']
+        results_df = results_df.drop(columns=stats_cols_to_remove)
+
+        # סדר מחדש את העמודות - התראות מיד אחרי השם
+        base_cols = ['מספר זהות', 'שם מלא', 'התראות']
+        other_cols = [col for col in results_df.columns if col not in base_cols]
+        results_df = results_df[base_cols + other_cols]
+
+        # הוסף עמודות ציונים ידניות
+        manual_columns = [
+            'ציון חבורה', 'חבורה',
+            'ציון מוסר', 'מוסר',
+            'ציון סיכומים', 'סיכומים',
+            'ציון מבחן הלכה', 'מבחן הלכה',
+            'ציון מבחן שס', 'מבחן שס'
+        ]
+        for col in manual_columns:
+            results_df[col] = ''
+
         results_df['סך סופי'] = 0
 
         results_df.to_excel(output_file, index=False)
 
         wb = load_workbook(output_file)
         ws = wb.active
+        
+        # הגדר כיוון מימין לשמאל (RTL)
+        ws.sheet_view.rightToLeft = True
 
         headers = [cell.value for cell in ws[1]]
 
@@ -172,14 +191,29 @@ def process_kollel_attendance(input_file: str, output_file: str, working_days: i
                 f'IF(ISNUMBER({sikumim_col}{row}),{sikumim_col}{row},0)+'
                 f'IF(ISNUMBER({halacha_col}{row}),{halacha_col}{row},0)+'
                 f'IF(ISNUMBER({shas_col}{row}),{shas_col}{row},0)+'
-                f'IF(AND({tier1_reason_col}{row}<>"",{tier1_reason_col}{row}<>0),IF({tier1_col}{row}=0,190,{tier1_col}{row}),{tier1_col}{row})+'
-                f'IF(AND({tier2_reason_col}{row}<>"",{tier2_reason_col}{row}<>0),IF({tier2_col}{row}=0,200,{tier2_col}{row}),{tier2_col}{row})+'
-                f'IF(AND({perfect_reason_col}{row}<>"",{perfect_reason_col}{row}<>0),IF({perfect_col}{row}=0,200,{perfect_col}{row}),{perfect_col}{row})+'
-                f'IF(AND({early_reason_col}{row}<>"",{early_reason_col}{row}<>0),IF({early_col}{row}=0,200,{early_col}{row}),{early_col}{row})'
+                f'IF(AND({tier1_reason_col}{row}<>"",{tier1_reason_col}{row}<>0),IF(ISNUMBER({tier1_col}{row}),IF({tier1_col}{row}=0,190,{tier1_col}{row}),190),IF(ISNUMBER({tier1_col}{row}),{tier1_col}{row},0))+'
+                f'IF(AND({tier2_reason_col}{row}<>"",{tier2_reason_col}{row}<>0),IF(ISNUMBER({tier2_col}{row}),IF({tier2_col}{row}=0,200,{tier2_col}{row}),200),IF(ISNUMBER({tier2_col}{row}),{tier2_col}{row},0))+'
+                f'IF(AND({perfect_reason_col}{row}<>"",{perfect_reason_col}{row}<>0),IF(ISNUMBER({perfect_col}{row}),IF({perfect_col}{row}=0,200,{perfect_col}{row}),200),IF(ISNUMBER({perfect_col}{row}),{perfect_col}{row},0))+'
+                f'IF(AND({early_reason_col}{row}<>"",{early_reason_col}{row}<>0),IF(ISNUMBER({early_col}{row}),IF({early_col}{row}=0,200,{early_col}{row}),200),IF(ISNUMBER({early_col}{row}),{early_col}{row},0))'
             )
             ws[f'{final_col}{row}'] = formula
 
         wb.save(output_file)
+        
+        # הוסף גליונות מפורטים לכל אברך
+        try:
+            add_detailed_sheets(output_file, df, results, working_days)
+        except Exception as e:
+            print(f"Warning: Could not add detailed sheets: {e}")
+            # ממשיכים גם אם הוספת הגליונות נכשלה
+        
+        # עצב את גליון הסיכום
+        try:
+            format_summary_sheet(output_file)
+        except Exception as e:
+            print(f"Warning: Could not format summary sheet: {e}")
+            # ממשיכים גם אם העיצוב נכשל
+        
         return True
 
     except Exception as e:
