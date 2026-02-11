@@ -41,3 +41,7 @@ Thumbs.db
 *.xls
 !example_data/*.xlsx
 *.exe
+
+# PyInstaller
+*.spec
+BC*

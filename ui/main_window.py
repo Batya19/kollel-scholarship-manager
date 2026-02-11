@@ -1,8 +1,9 @@
 import customtkinter as ctk
 from tkinter import filedialog
-from CTkMessagebox import CTkMessagebox
 from .dialog import ModernDialog
+from .rtl_messagebox import RTLMessageBox
 from utils.excel_processor import process_kollel_attendance
+from utils.date_utils import get_hebrew_month_name
 import pandas as pd
 
 
@@ -87,13 +88,7 @@ class ModernKollelUI:
             month_number = first_date.month
             year = first_date.year
 
-            month_names = {
-                1: "ינואר", 2: "פברואר", 3: "מרץ", 4: "אפריל",
-                5: "מאי", 6: "יוני", 7: "יולי", 8: "אוגוסט",
-                9: "ספטמבר", 10: "אוקטובר", 11: "נובמבר", 12: "דצמבר"
-            }
-
-            month_name = month_names.get(month_number, str(month_number))
+            month_name = get_hebrew_month_name(month_number)
             return f"מלגות חודשיות {month_name} {year}.xlsx"
 
         except Exception:
@@ -115,18 +110,21 @@ class ModernKollelUI:
 
                 try:
                     if process_kollel_attendance(filepath, output_filename, working_days):
-                        CTkMessagebox(
+                        msg = RTLMessageBox(
+                            parent=self.root,
                             title="הצלחה",
-                            message=f"החישוב הסתיים! הקובץ '{output_filename}' נשמר.",
-                            icon="check",
-                            fade_in_duration=1
+                            message=f"החישוב הסתיים!\nהקובץ '{output_filename}' נשמר.",
+                            icon="check"
                         )
+                        self.root.wait_window(msg)
                 except Exception as e:
-                    CTkMessagebox(
+                    msg = RTLMessageBox(
+                        parent=self.root,
                         title="שגיאה",
-                        message=f"אירעה שגיאה: {str(e)}",
+                        message=f"אירעה שגיאה:\n{str(e)}",
                         icon="cancel"
                     )
+                    self.root.wait_window(msg)
 
     def run(self):
         self.root.mainloop()

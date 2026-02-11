@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
+from .rtl_messagebox import RTLMessageBox
 
 
 class ModernDialog(ctk.CTkToplevel):
@@ -71,14 +71,18 @@ class ModernDialog(ctk.CTkToplevel):
                 self.result = value
                 self.destroy()
             else:
-                CTkMessagebox(
+                msg = RTLMessageBox(
+                    parent=self,
                     title="שגיאה",
                     message="נא להזין מספר בין 1 ל-31",
                     icon="warning"
                 )
+                self.wait_window(msg)
         except ValueError:
-            CTkMessagebox(
+            msg = RTLMessageBox(
+                parent=self,
                 title="שגיאה",
                 message="נא להזין מספר תקין",
                 icon="warning"
             )
+            self.wait_window(msg)

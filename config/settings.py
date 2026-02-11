@@ -1,5 +1,10 @@
 from datetime import time
 
+# General rules
+MAX_ALLOWED_LATES_OR_ABSENCES = 2
+NINE_AM_TIME = time(9, 0)
+NINE_AM_MINUTES = 9 * 60
+
 MORNING_CONFIG = {
     'BASE': 400,
     'START': time(9, 30),
