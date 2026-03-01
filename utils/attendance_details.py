@@ -350,12 +350,15 @@ def add_detailed_sheets(
                 if entry_minutes >= very_late_threshold_minutes:
                     ws.cell(row=row, column=8).value = "❌ איחור משמעותי"
                     ws.cell(row=row, column=8).font = Font(color="FF0000")
+                    ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
                 elif entry_minutes >= late_threshold_minutes:
                     ws.cell(row=row, column=8).value = "⚠️ איחור"
                     ws.cell(row=row, column=8).font = Font(color="FFA500")
+                    ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
                 else:
                     ws.cell(row=row, column=8).value = "✅ בזמן"
                     ws.cell(row=row, column=8).font = Font(color="008000")
+                    ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
 
             # Late minutes
             if isinstance(entry_time, time):
