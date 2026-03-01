@@ -14,16 +14,6 @@ def _format_time_field(
         row: int,
         column: int,
         allow_zero: bool = False):
-    """
-    Format and set a time field in worksheet.
-
-    Args:
-        time_value: Time value to format
-        ws: Worksheet object
-        row (int): Row number
-        column (int): Column number
-        allow_zero (bool): Whether time(0,0) is valid (False means it's missing)
-    """
     if pd.isna(time_value) or time_value is pd.NaT:
         ws.cell(row=row, column=column).value = "חסר"
         ws.cell(row=row, column=column).font = Font(color="FF0000")
@@ -44,15 +34,6 @@ def _format_time_field(
 
 
 def _calculate_daily_bonuses(student_data: pd.DataFrame) -> dict:
-    """
-    Calculate daily bonuses for each date and session type.
-
-    Args:
-        student_data (pd.DataFrame): Student attendance data
-
-    Returns:
-        dict: Dictionary mapping (date, session_type) to bonus string
-    """
     from collections import defaultdict
     daily_bonuses = defaultdict(lambda: "-")
 
@@ -60,8 +41,7 @@ def _calculate_daily_bonuses(student_data: pd.DataFrame) -> dict:
     student_data_grouped = student_data_grouped.sort_values(['תאריך', 'סדר'])
 
     for session_type in ['בוקר', 'צהריים']:
-        session_data = student_data_grouped[student_data_grouped['סדר']
-                                            == session_type]
+        session_data = student_data_grouped[student_data_grouped['סדר'] == session_type]
         if session_data.empty:
             continue
 
@@ -78,17 +58,10 @@ def _calculate_daily_bonuses(student_data: pd.DataFrame) -> dict:
             exit_time = row_data['שעת יציאה']
             is_continuous = row_data['רצופות']
 
-            if isinstance(
-                entry_time,
-                time) and isinstance(
-                exit_time,
-                time) and exit_time != time(
-                0,
-                    0):
+            if isinstance(entry_time, time) and isinstance(exit_time, time) and exit_time != time(0, 0):
                 entry_minutes = time_to_minutes(entry_time)
                 exit_minutes = time_to_minutes(exit_time)
-                perfect_start_minutes = time_to_minutes(
-                    config['PERFECT_START'])
+                perfect_start_minutes = time_to_minutes(config['PERFECT_START'])
                 end_minutes = time_to_minutes(config['END'])
 
                 is_perfect = (
@@ -106,14 +79,6 @@ def _calculate_daily_bonuses(student_data: pd.DataFrame) -> dict:
 
 
 def _add_sheet_header(ws, student_name: str, student_id: str):
-    """
-    Add header to student detail sheet.
-
-    Args:
-        ws: Worksheet object
-        student_name (str): Student full name
-        student_id (str): Student ID number
-    """
     ws.merge_cells('A1:M1')
     ws['A1'] = f"פירוט נוכחות - {student_name}"
     ws['A1'].font = Font(size=16, bold=True)
@@ -126,13 +91,6 @@ def _add_sheet_header(ws, student_name: str, student_id: str):
 
 
 def _add_column_headers(ws, row: int):
-    """
-    Add column headers to worksheet.
-
-    Args:
-        ws: Worksheet object
-        row (int): Row number for headers
-    """
     headers = [
         'תאריך', 'יום', 'סדר', 'שעת כניסה', 'שעת יציאה',
         'רצופות', 'סך שעות', 'סטטוס', 'זמן איחור (דק\')',
@@ -150,15 +108,12 @@ def _add_column_headers(ws, row: int):
         cell = ws.cell(row=row, column=col)
         cell.value = header
         cell.font = Font(bold=True, size=11)
-        cell.fill = PatternFill(
-            start_color="D3D3D3",
-            end_color="D3D3D3",
-            fill_type="solid")
+        cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
         cell.alignment = Alignment(horizontal='center')
         cell.border = thin_border
 
 
-def _add_summary_section(ws, summary_row: int, result: dict):
+def _add_summary_section(ws, summary_row: int, result: dict, start_col: int = 1):
     """
     Add summary section to worksheet.
 
@@ -166,14 +121,23 @@ def _add_summary_section(ws, summary_row: int, result: dict):
         ws: Worksheet object
         summary_row (int): Starting row for summary
         result (dict): Scholarship calculation results
+        start_col (int): Starting column for summary (default=1 for bottom, pass 15 for right side)
     """
-    ws.merge_cells(f'A{summary_row}:M{summary_row}')
-    ws[f'A{summary_row}'] = "סיכום"
-    ws[f'A{summary_row}'].font = Font(size=14, bold=True)
-    ws[f'A{summary_row}'].alignment = Alignment(horizontal='center')
-    ws[f'A{summary_row}'].fill = PatternFill(
-        start_color="4472C4", end_color="4472C4", fill_type="solid")
-    ws[f'A{summary_row}'].font = Font(size=14, bold=True, color="FFFFFF")
+    # ── CHANGED: use start_col and start_col+1 instead of hardcoded A/1/2 ──
+    label_col = start_col
+    value_col = start_col + 1
+    end_col   = start_col + 1
+
+    label_col_letter = get_column_letter(label_col)
+    end_col_letter   = get_column_letter(end_col)
+
+    # Header "סיכום" spanning two columns
+    ws.merge_cells(f'{label_col_letter}{summary_row}:{end_col_letter}{summary_row}')
+    header_cell = ws.cell(row=summary_row, column=label_col)
+    header_cell.value = "סיכום"
+    header_cell.alignment = Alignment(horizontal='center')
+    header_cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_cell.font = Font(size=14, bold=True, color="FFFFFF")
 
     summary_row += 2
 
@@ -204,7 +168,8 @@ def _add_summary_section(ws, summary_row: int, result: dict):
     ]
 
     for label, value in summary_data:
-        cell = ws.cell(row=summary_row, column=1)
+        # ── CHANGED: write to label_col / value_col instead of column=1/2 ──
+        cell = ws.cell(row=summary_row, column=label_col)
         cell.value = label
 
         if label == "תוספות:":
@@ -214,17 +179,11 @@ def _add_summary_section(ws, summary_row: int, result: dict):
         else:
             cell.font = Font(bold=True)
 
-        ws.cell(row=summary_row, column=2).value = value
+        ws.cell(row=summary_row, column=value_col).value = value
         summary_row += 1
 
 
 def _set_column_widths(ws):
-    """
-    Set column widths for worksheet.
-
-    Args:
-        ws: Worksheet object
-    """
     ws.column_dimensions['A'].width = 12
     ws.column_dimensions['B'].width = 6
     ws.column_dimensions['C'].width = 10
@@ -238,6 +197,9 @@ def _set_column_widths(ws):
     ws.column_dimensions['K'].width = 12
     ws.column_dimensions['L'].width = 14
     ws.column_dimensions['M'].width = 20
+    # ── CHANGED: widths for the two summary columns (O and P) ──
+    ws.column_dimensions['O'].width = 22  # תווית
+    ws.column_dimensions['P'].width = 14  # ערך
 
 
 def add_detailed_sheets(
@@ -247,53 +209,31 @@ def add_detailed_sheets(
         working_days: int):
     """
     מוסיף גליונות מפורטים לכל אברך בקובץ Excel קיים.
-
-    Args:
-        excel_file (str): נתיב לקובץ Excel (שכבר מכיל את גליון הסיכום)
-        input_data (pd.DataFrame): נתוני הנוכחות המקוריים
-        scholarship_results (list): תוצאות חישוב המלגות
-        working_days (int): מספר ימי עבודה בחודש
     """
-    
-    # Load existing file
     wb = load_workbook(excel_file)
-    
-    # Rename first sheet to "Summary"
+
     if 'Sheet' in wb.sheetnames or wb.sheetnames[0]:
         ws_summary = wb.active
         ws_summary.title = "סיכום"
-        # Set right-to-left direction (RTL)
         ws_summary.sheet_view.rightToLeft = True
-    
-    # Loop through each student and create a sheet
+
     for result in scholarship_results:
         student_id = result['מספר זהות']
         student_name = result['שם מלא']
-        
-        # Filter student data
+
         student_data = input_data[input_data['זהות'] == student_id].copy()
-        
+
         if student_data.empty:
             continue
-        
-        # Create new sheet for student (limited to 31 chars - Excel limitation)
+
         sheet_name = student_name[:31]
         ws = wb.create_sheet(title=sheet_name)
-        
-        # Set right-to-left direction (RTL)
         ws.sheet_view.rightToLeft = True
-        
-        # Add header
+
         _add_sheet_header(ws, student_name, student_id)
-        
-        # Add column headers (row 4)
         _add_column_headers(ws, 4)
-        
-        # Add attendance data
-        # Calculate daily bonuses grouped by date + session (as in actual calculation)
+
         daily_bonuses = _calculate_daily_bonuses(student_data)
-        
-        # Track date+session already displayed (to show bonus only once)
         displayed_dates = set()
 
         row = 5
@@ -304,133 +244,92 @@ def add_detailed_sheets(
 
             # Day of week
             if hasattr(record['תאריך'], 'weekday'):
-                ws.cell(
-                    row=row, column=2).value = get_hebrew_day_name(
-                    record['תאריך'].weekday())
+                ws.cell(row=row, column=2).value = get_hebrew_day_name(record['תאריך'].weekday())
 
             # Session type
             session_type = record['סדר']
             ws.cell(row=row, column=3).value = session_type
 
-            # Entry time
-            entry_time = _format_time_field(
-                record['שעת כניסה'], ws, row, 4, allow_zero=True)
-
-            # Exit time
-            exit_time = _format_time_field(
-                record['שעת יציאה'], ws, row, 5, allow_zero=False)
+            # Entry / exit times
+            entry_time = _format_time_field(record['שעת כניסה'], ws, row, 4, allow_zero=True)
+            exit_time  = _format_time_field(record['שעת יציאה'],  ws, row, 5, allow_zero=False)
 
             # Continuous
             ws.cell(row=row, column=6).value = record.get('רצופות', '')
 
-            # Total hours - calculated
+            # Total hours
             config = get_session_config(session_type)
-
-            if isinstance(
-                entry_time,
-                time) and isinstance(
-                exit_time,
-                time) and exit_time != time(
-                0,
-                    0):
-                hours = calculate_hours_between(
-                    entry_time, exit_time, config['START'], config['END'])
+            if isinstance(entry_time, time) and isinstance(exit_time, time) and exit_time != time(0, 0):
+                hours = calculate_hours_between(entry_time, exit_time, config['START'], config['END'])
                 ws.cell(row=row, column=7).value = hours
             else:
                 ws.cell(row=row, column=7).value = 0
 
-            # Status (late/on-time)
+            # Status — ── CHANGED: added alignment(horizontal='right') to all three cases ──
             if isinstance(entry_time, time):
                 entry_minutes = time_to_minutes(entry_time)
-                late_threshold_minutes = time_to_minutes(
-                    config['LATE_THRESHOLD'])
-                very_late_threshold_minutes = time_to_minutes(
-                    config['VERY_LATE_THRESHOLD'])
+                late_threshold_minutes      = time_to_minutes(config['LATE_THRESHOLD'])
+                very_late_threshold_minutes = time_to_minutes(config['VERY_LATE_THRESHOLD'])
 
                 if entry_minutes >= very_late_threshold_minutes:
-                    ws.cell(row=row, column=8).value = "❌ איחור משמעותי"
-                    ws.cell(row=row, column=8).font = Font(color="FF0000")
+                    ws.cell(row=row, column=8).value     = "❌ איחור משמעותי"
+                    ws.cell(row=row, column=8).font      = Font(color="FF0000")
                     ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
                 elif entry_minutes >= late_threshold_minutes:
-                    ws.cell(row=row, column=8).value = "⚠️ איחור"
-                    ws.cell(row=row, column=8).font = Font(color="FFA500")
+                    ws.cell(row=row, column=8).value     = "⚠️ איחור"
+                    ws.cell(row=row, column=8).font      = Font(color="FFA500")
                     ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
                 else:
-                    ws.cell(row=row, column=8).value = "✅ בזמן"
-                    ws.cell(row=row, column=8).font = Font(color="008000")
+                    ws.cell(row=row, column=8).value     = "✅ בזמן"
+                    ws.cell(row=row, column=8).font      = Font(color="008000")
                     ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
 
             # Late minutes
             if isinstance(entry_time, time):
-                entry_minutes_calc = time_to_minutes(entry_time)
-                perfect_start_minutes = time_to_minutes(
-                    config['PERFECT_START'])
-
+                entry_minutes_calc    = time_to_minutes(entry_time)
+                perfect_start_minutes = time_to_minutes(config['PERFECT_START'])
                 if entry_minutes_calc > perfect_start_minutes:
-                    late_minutes = entry_minutes_calc - perfect_start_minutes
-                    ws.cell(row=row, column=9).value = late_minutes
+                    ws.cell(row=row, column=9).value = entry_minutes_calc - perfect_start_minutes
                 else:
                     ws.cell(row=row, column=9).value = 0
 
             # Arrived before 9:00? (morning only)
             if session_type == 'בוקר' and isinstance(entry_time, time):
-                entry_minutes_calc = time_to_minutes(entry_time)
-                if entry_minutes_calc < NINE_AM_MINUTES:
+                if time_to_minutes(entry_time) < NINE_AM_MINUTES:
                     ws.cell(row=row, column=10).value = "כן"
-                    ws.cell(row=row, column=10).font = Font(color="008000")
+                    ws.cell(row=row, column=10).font  = Font(color="008000")
                 else:
                     ws.cell(row=row, column=10).value = "לא"
             else:
                 ws.cell(row=row, column=10).value = "-"
 
-            # Daily bonus - display only in first row of each date+session
+            # Daily bonus
             date_key = (record['תאריך'], session_type)
             if date_key not in displayed_dates:
-                ws.cell(
-                    row=row,
-                    column=11).value = daily_bonuses.get(
-                    date_key,
-                    "-")
+                ws.cell(row=row, column=11).value = daily_bonuses.get(date_key, "-")
                 displayed_dates.add(date_key)
             else:
-                # Additional rows for same day - bonus already counted above
                 ws.cell(row=row, column=11).value = "↑ כלול"
-                ws.cell(
-                    row=row,
-                    column=11).font = Font(
-                    color="808080",
-                    italic=True)
+                ws.cell(row=row, column=11).font  = Font(color="808080", italic=True)
 
             # Missing hours
             expected_hours = config['HOURS']
-            actual_hours = ws.cell(row=row, column=7).value or 0
-            missed_hours = round(expected_hours - actual_hours, 2)
-            ws.cell(
-                row=row,
-                column=12).value = missed_hours if missed_hours > 0 else 0
+            actual_hours   = ws.cell(row=row, column=7).value or 0
+            missed_hours   = round(expected_hours - actual_hours, 2)
+            ws.cell(row=row, column=12).value = missed_hours if missed_hours > 0 else 0
 
             # Notes
             notes = []
             if exit_time == time(0, 0):
                 notes.append("חסר זמן יציאה")
-            if isinstance(entry_time, time):
-                entry_minutes_calc = time_to_minutes(entry_time)
-                very_late_threshold_minutes = time_to_minutes(
-                    config['VERY_LATE_THRESHOLD'])
-                if entry_minutes_calc >= very_late_threshold_minutes:
-                    notes.append("איחור חמור")
-
-            ws.cell(row=row, column=13).value = ", ".join(
-                notes) if notes else ""
+            ws.cell(row=row, column=13).value = ", ".join(notes) if notes else ""
 
             row += 1
 
-        # Add summary at the bottom
-        summary_row = row + 2
-        _add_summary_section(ws, summary_row, result)
+        # ── CHANGED: summary now appears to the right of the data, starting at column O (14),
+        #    aligned with the header row (row 4), instead of below the data ──
+        _add_summary_section(ws, summary_row=4, result=result, start_col=14)
 
-        # Adjust column widths
         _set_column_widths(ws)
 
-    # Save the file
     wb.save(excel_file)
