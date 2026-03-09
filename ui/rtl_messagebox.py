@@ -29,8 +29,8 @@ class RTLMessageBox(ctk.CTkToplevel):
         self.geometry("400x200")
         
         # Center the window
-        window_width = 400
-        window_height = 200
+        window_width = 600
+        window_height = 300
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
