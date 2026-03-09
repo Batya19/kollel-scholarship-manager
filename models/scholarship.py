@@ -295,9 +295,12 @@ class KollelScholarship:
         session_data['שעת יציאה'] = session_data['שעת יציאה'].apply(
             self._parse_time)
 
-        # Filter days without valid exit time (00:00 = didn't sign out)
-        # These days won't be counted at all - as if the student wasn't present
-        session_data = session_data[session_data['שעת יציאה'] != time(0, 0)]
+        # Filter out days without a valid entry OR exit time.
+        # A missing time is parsed as 00:00.
+        # These days are treated as if the student was absent.
+        valid_times_mask = (session_data['שעת כניסה'] != time(0, 0)) & \
+                           (session_data['שעת יציאה'] != time(0, 0))
+        session_data = session_data[valid_times_mask]
 
         # If after filtering there's no data - return empty statistics
         if session_data.empty:
@@ -414,11 +417,19 @@ class KollelScholarship:
         # Identify days without valid exit time
         warnings = []
         student_data_copy = student_data.copy()
-        student_data_copy['שעת יציאה_parsed'] = student_data_copy['שעת יציאה'].apply(
-            self._parse_time)
-        missing_exit_days = len(
-            student_data_copy[student_data_copy['שעת יציאה_parsed'] == time(0, 0)])
+        student_data_copy['שעת כניסה_parsed'] = student_data_copy['שעת כניסה'].apply(self._parse_time)
+        student_data_copy['שעת יציאה_parsed'] = student_data_copy['שעת יציאה'].apply(self._parse_time)
 
+        missing_entry_mask = student_data_copy['שעת כניסה_parsed'] == time(0, 0)
+        missing_exit_mask = student_data_copy['שעת יציאה_parsed'] == time(0, 0)
+
+        missing_entry_days = missing_entry_mask.sum()
+        missing_exit_days = missing_exit_mask.sum()
+
+        # Generate warnings for missing data
+        if missing_entry_days > 0:
+            warnings.append(
+                f"⚠️ {missing_entry_days} ימים ללא זמן כניסה (לא נספרו)")
         if missing_exit_days > 0:
             warnings.append(
                 f"⚠️ {missing_exit_days} ימים ללא זמן יציאה (לא נספרו)")

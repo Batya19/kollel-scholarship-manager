@@ -197,9 +197,9 @@ def _set_column_widths(ws):
     ws.column_dimensions['K'].width = 12
     ws.column_dimensions['L'].width = 14
     ws.column_dimensions['M'].width = 20
-    # ── CHANGED: widths for the two summary columns (O and P) ──
-    ws.column_dimensions['O'].width = 22  # תווית
-    ws.column_dimensions['P'].width = 14  # ערך
+    # ── CHANGED: widths for the two summary columns (N and O) ──
+    ws.column_dimensions['N'].width = 22
+    ws.column_dimensions['O'].width = 14
 
 
 def add_detailed_sheets(
