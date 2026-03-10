@@ -271,11 +271,11 @@ def add_detailed_sheets(
                 late_threshold_minutes      = time_to_minutes(config['LATE_THRESHOLD'])
                 very_late_threshold_minutes = time_to_minutes(config['VERY_LATE_THRESHOLD'])
 
-                if entry_minutes >= very_late_threshold_minutes:
+                if entry_minutes > very_late_threshold_minutes:
                     ws.cell(row=row, column=8).value     = "❌ איחור משמעותי"
                     ws.cell(row=row, column=8).font      = Font(color="FF0000")
                     ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
-                elif entry_minutes >= late_threshold_minutes:
+                elif entry_minutes > late_threshold_minutes:
                     ws.cell(row=row, column=8).value     = "⚠️ איחור"
                     ws.cell(row=row, column=8).font      = Font(color="FFA500")
                     ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
@@ -320,8 +320,11 @@ def add_detailed_sheets(
 
             # Notes
             notes = []
-            if exit_time == time(0, 0):
+            # Note: exit_time is None if original is 00:00, due to _format_time_field. Check original record.
+            if isinstance(record['שעת יציאה'], time) and record['שעת יציאה'] == time(0, 0):
                 notes.append("חסר זמן יציאה")
+            elif isinstance(exit_time, time) and time_to_minutes(exit_time) < time_to_minutes(config['END']):
+                notes.append("יציאה מוקדמת")
             ws.cell(row=row, column=13).value = ", ".join(notes) if notes else ""
 
             row += 1

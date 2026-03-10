@@ -5,6 +5,7 @@ from openpyxl.utils import get_column_letter
 from models.scholarship import KollelScholarship
 from utils.attendance_details import add_detailed_sheets
 from utils.summary_formatter import format_summary_sheet
+from config.settings import AFTERNOON_CONFIG
 from utils.date_utils import get_hebrew_month_name
 
 
@@ -146,8 +147,10 @@ def process_kollel_attendance(
         df['תאריך'] = df['כניסה'].dt.date
         df['שעת כניסה'] = df['כניסה'].dt.time
         df['שעת יציאה'] = df['יציאה'].dt.time
+
+        afternoon_start_time = AFTERNOON_CONFIG['START']
         df['סדר'] = df['שעת כניסה'].apply(
-            lambda x: 'בוקר' if x.hour < 12 else 'צהריים')
+            lambda x: 'בוקר' if x < afternoon_start_time else 'צהריים')
 
         calculator = KollelScholarship()
         results = [
