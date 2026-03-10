@@ -199,7 +199,7 @@ def _set_column_widths(ws):
     ws.column_dimensions['M'].width = 20
     # ── CHANGED: widths for the two summary columns (N and O) ──
     ws.column_dimensions['N'].width = 22
-    ws.column_dimensions['O'].width = 14
+    ws.column_dimensions['O'].width = 10
 
 
 def add_detailed_sheets(

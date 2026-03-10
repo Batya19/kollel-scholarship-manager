@@ -140,9 +140,11 @@ class KollelScholarship:
             float: Base scholarship amount
         """
         if late_days > MAX_ALLOWED_LATES_OR_ABSENCES or absent_days > MAX_ALLOWED_LATES_OR_ABSENCES:
-            regular_days = attended_days - very_late_days
-            base = (regular_days * config['LATE_DAILY_RATE']) + \
-                (very_late_days * BONUS_CONFIG['DAILY_PARTIAL'])
+            # When disqualified, calculate pay per day.
+            # Punctual days and regular late days receive the daily rate.
+            # Very late days receive 0 for the base scholarship.
+            eligible_days = attended_days - very_late_days
+            base = eligible_days * config['LATE_DAILY_RATE']
         else:
             base = config['BASE']
 
