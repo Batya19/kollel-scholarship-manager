@@ -5,8 +5,8 @@ from openpyxl.utils import get_column_letter
 from models.scholarship import KollelScholarship
 from utils.attendance_details import add_detailed_sheets
 from utils.summary_formatter import format_summary_sheet
-from config.settings import AFTERNOON_CONFIG
 from utils.date_utils import get_hebrew_month_name
+from config.settings import SESSION_SEPARATOR_TIME
 
 
 def _build_grade_formula(grade_col: str, row: int, max_value: int) -> str:
@@ -132,6 +132,10 @@ def process_kollel_attendance(
             'רצופות': str
         })
         df = df.dropna(how='all')
+        required_columns = ['זהות', 'שם משפחה', 'שם פרטי', 'כניסה', 'יציאה', 'רצופות']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"הקובץ אינו תואם את הפורמט הנדרש.\nעמודות חסרות: {', '.join(missing_columns)}")
 
         for col in ['כניסה', 'יציאה']:
             df[col] = pd.to_datetime(df[col])
@@ -148,9 +152,8 @@ def process_kollel_attendance(
         df['שעת כניסה'] = df['כניסה'].dt.time
         df['שעת יציאה'] = df['יציאה'].dt.time
 
-        afternoon_start_time = AFTERNOON_CONFIG['START']
         df['סדר'] = df['שעת כניסה'].apply(
-            lambda x: 'בוקר' if x < afternoon_start_time else 'צהריים')
+            lambda x: 'בוקר' if x < SESSION_SEPARATOR_TIME else 'צהריים')
 
         calculator = KollelScholarship()
         results = [
@@ -297,6 +300,9 @@ def process_kollel_attendance(
 
         return True
 
+    except PermissionError:
+        messagebox.showerror("שגיאה", "הקובץ פתוח במחשב.\nנא לסגור אותו ולנסות שנית.")
+        return False
     except Exception as e:
         print(f"An error occurred: {e}")
         messagebox.showerror("שגיאה", f"אירעה שגיאה: {str(e)}")

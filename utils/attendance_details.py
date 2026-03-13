@@ -3,10 +3,8 @@ from datetime import time
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from config.settings import NINE_AM_MINUTES
-from utils.time_utils import time_to_minutes, calculate_hours_between, get_session_config
+from utils.time_utils import time_to_minutes, calculate_hours_between, get_session_config, is_invalid_record, is_before_nine, is_perfect_day
 from utils.date_utils import get_hebrew_day_name
-
 
 def _format_time_field(
         time_value,
@@ -52,23 +50,18 @@ def _calculate_daily_bonuses(student_data: pd.DataFrame) -> dict:
             'שעת יציאה': 'max',
             'רצופות': lambda x: 'כן' in x.values if not x.empty else False
         })
-
         for date_val, row_data in daily_grouped.iterrows():
             entry_time = row_data['שעת כניסה']
             exit_time = row_data['שעת יציאה']
+            
+            # דלג על רשומות לא חוקיות
+            invalid, _ = is_invalid_record(entry_time, exit_time, config)
+            if invalid:
+                continue
             is_continuous = row_data['רצופות']
 
             if isinstance(entry_time, time) and isinstance(exit_time, time) and exit_time != time(0, 0):
-                entry_minutes = time_to_minutes(entry_time)
-                exit_minutes = time_to_minutes(exit_time)
-                perfect_start_minutes = time_to_minutes(config['PERFECT_START'])
-                end_minutes = time_to_minutes(config['END'])
-
-                is_perfect = (
-                    entry_minutes <= perfect_start_minutes and
-                    exit_minutes >= end_minutes and
-                    is_continuous
-                )
+                is_perfect = is_perfect_day(entry_time, exit_time, is_continuous, config)
 
                 if is_perfect:
                     daily_bonuses[(date_val, session_type)] = "20 ₪"
@@ -236,6 +229,7 @@ def add_detailed_sheets(
         daily_bonuses = _calculate_daily_bonuses(student_data)
         displayed_dates = set()
 
+        records_per_day = student_data.groupby(['תאריך', 'סדר']).size()
         row = 5
         for _, record in student_data.iterrows():
             # Date
@@ -259,11 +253,14 @@ def add_detailed_sheets(
 
             # Total hours
             config = get_session_config(session_type)
+            hours_decimal = 0.0
             if isinstance(entry_time, time) and isinstance(exit_time, time) and exit_time != time(0, 0):
-                hours = calculate_hours_between(entry_time, exit_time, config['START'], config['END'])
-                ws.cell(row=row, column=7).value = hours
-            else:
-                ws.cell(row=row, column=7).value = 0
+                hours_decimal = calculate_hours_between(entry_time, exit_time, config['START'], config['END'])
+
+            total_minutes = int(hours_decimal * 60)
+            h = total_minutes // 60
+            m = total_minutes % 60
+            ws.cell(row=row, column=7).value = f"{h:02d}:{m:02d}"
 
             # Status — ── CHANGED: added alignment(horizontal='right') to all three cases ──
             if isinstance(entry_time, time):
@@ -295,7 +292,7 @@ def add_detailed_sheets(
 
             # Arrived before 9:00? (morning only)
             if session_type == 'בוקר' and isinstance(entry_time, time):
-                if time_to_minutes(entry_time) < NINE_AM_MINUTES:
+                if is_before_nine(entry_time):
                     ws.cell(row=row, column=10).value = "כן"
                     ws.cell(row=row, column=10).font  = Font(color="008000")
                 else:
@@ -314,17 +311,38 @@ def add_detailed_sheets(
 
             # Missing hours
             expected_hours = config['HOURS']
-            actual_hours   = ws.cell(row=row, column=7).value or 0
-            missed_hours   = round(expected_hours - actual_hours, 2)
-            ws.cell(row=row, column=12).value = missed_hours if missed_hours > 0 else 0
+            missed_hours = round(expected_hours - hours_decimal, 2)
+            if missed_hours > 0:
+                total_missed_minutes = int(missed_hours * 60)
+                h = total_missed_minutes // 60
+                m = total_missed_minutes % 60
+                ws.cell(row=row, column=12).value = f"{h:02d}:{m:02d}"
+            else:
+                ws.cell(row=row, column=12).value = "00:00"
 
             # Notes
             notes = []
-            # Note: exit_time is None if original is 00:00, due to _format_time_field. Check original record.
-            if isinstance(record['שעת יציאה'], time) and record['שעת יציאה'] == time(0, 0):
-                notes.append("חסר זמן יציאה")
-            elif isinstance(exit_time, time) and time_to_minutes(exit_time) < time_to_minutes(config['END']):
-                notes.append("יציאה מוקדמת")
+            day_key = (record['תאריך'], record['סדר'])
+            is_partial_record = records_per_day.get(day_key, 1) > 1
+
+            is_invalid, reason = is_invalid_record(entry_time, exit_time, config)
+
+            if is_invalid:
+                ws.cell(row=row, column=8).value     = "🚫 רשומה לא חוקית"
+                ws.cell(row=row, column=8).font      = Font(color="9B59B6", bold=True)
+                ws.cell(row=row, column=8).alignment = Alignment(horizontal='right')
+                ws.cell(row=row, column=11).value    = "-"
+                ws.cell(row=row, column=13).value = f"לא נספרת ({reason})"
+                row += 1
+                continue
+
+            if is_partial_record:
+                notes.append("רשומה חלקית - יש המשך")
+            else:
+                if isinstance(record['שעת יציאה'], time) and record['שעת יציאה'] == time(0, 0):
+                    notes.append("חסר זמן יציאה")
+                elif isinstance(exit_time, time) and time_to_minutes(exit_time) < time_to_minutes(config['EARLY_LEAVE_THRESHOLD']):
+                    notes.append("יציאה מוקדמת")
             ws.cell(row=row, column=13).value = ", ".join(notes) if notes else ""
 
             row += 1

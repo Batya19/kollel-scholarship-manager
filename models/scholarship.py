@@ -1,17 +1,19 @@
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import time
 from typing import Dict
 
 import pandas as pd
 from config.settings import (
     BONUS_CONFIG,
-    MAX_ALLOWED_LATES_OR_ABSENCES, NINE_AM_TIME
+    MAX_ALLOWED_LATES_OR_ABSENCES,
+    get_max_early_bonus
 )
 from utils.time_utils import (
     compare_times, compare_times_gte,
-    calculate_hours_between, get_session_config, get_expected_hours
+    calculate_hours_between, get_session_config, get_expected_hours,
+    time_to_minutes, is_invalid_record, is_before_nine, is_perfect_day,
+    parse_time
 )
-
 
 @dataclass
 class SessionStats:
@@ -30,6 +32,7 @@ class SessionStats:
            missed_hours (float): Total hours missed from expected attendance
            very_late_days (int): Number of days with significantly late arrival
            early_attendance_bonus (float): Bonus amount for consistent early attendance
+           early_leave_days (int): Number of days with early departure
        """
     base: float
     bonus: float
@@ -42,6 +45,7 @@ class SessionStats:
     missed_hours: float
     very_late_days: int
     early_attendance_bonus: float
+    early_leave_days: int
 
 
 class KollelScholarship:
@@ -64,7 +68,8 @@ class KollelScholarship:
             str: Warning message or empty string
         """
         if stats.late_days <= MAX_ALLOWED_LATES_OR_ABSENCES and \
-           stats.absent_days <= MAX_ALLOWED_LATES_OR_ABSENCES:
+           stats.absent_days <= MAX_ALLOWED_LATES_OR_ABSENCES and \
+           stats.early_leave_days <= MAX_ALLOWED_LATES_OR_ABSENCES:
             return ""
 
         reasons = []
@@ -72,6 +77,8 @@ class KollelScholarship:
             reasons.append(f"{stats.late_days} איחורים ב{session_name}")
         if stats.absent_days > MAX_ALLOWED_LATES_OR_ABSENCES:
             reasons.append(f"{stats.absent_days} היעדרויות ב{session_name}")
+        if stats.early_leave_days > MAX_ALLOWED_LATES_OR_ABSENCES:
+            reasons.append(f"{stats.early_leave_days} יציאות מוקדמות ב{session_name}")
 
         return f"❌ מלגת בסיס {session_name} בוטלה ({', '.join(reasons)})"
 
@@ -81,7 +88,7 @@ class KollelScholarship:
             config: dict,
             working_days: int) -> tuple:
         """
-        Calculate attendance statistics (late days, very late days, perfect days, etc.)
+        Calculate attendance statistics (late days, very late days, perfect days, early leave days, etc.)
 
         Args:
             daily_stats (pd.DataFrame): Daily aggregated statistics
@@ -89,11 +96,10 @@ class KollelScholarship:
             working_days (int): Number of expected working days
 
         Returns:
-            tuple: (late_days, very_late_days, perfect_days, partial_bonus_days)
+            tuple: (late_days, very_late_days, perfect_days, partial_bonus_days, early_leave_days)
         """
-        late_threshold = self._parse_time(config['LATE_THRESHOLD'])
-        very_late_threshold = self._parse_time(config['VERY_LATE_THRESHOLD'])
-        perfect_start = self._parse_time(config['PERFECT_START'])
+        late_threshold = config['LATE_THRESHOLD']
+        very_late_threshold = config['VERY_LATE_THRESHOLD']
 
         late_mask = daily_stats['שעת כניסה'].apply(
             lambda x: compare_times(
@@ -103,21 +109,26 @@ class KollelScholarship:
         very_late_mask = daily_stats['שעת כניסה'].apply(
             lambda x: compare_times(x, very_late_threshold))
 
-        perfect_mask = (
-            daily_stats['שעת כניסה'].apply(
-                lambda x: not compare_times(
-                    x, perfect_start)) & daily_stats['שעת יציאה'].apply(
-                lambda x: compare_times_gte(
-                    x, config['END'])) & daily_stats['רצופות'])
+        perfect_mask = daily_stats.apply(
+            lambda row: is_perfect_day(
+                row['שעת כניסה'], row['שעת יציאה'], row['רצופות'], config
+            ), axis=1
+        )
+           
+        early_leave_threshold = config['EARLY_LEAVE_THRESHOLD']
+        early_leave_mask = daily_stats['שעת יציאה'].apply(
+            lambda x: not compare_times_gte(x, early_leave_threshold)) & ~very_late_mask
 
         late_days = min(late_mask.sum(), working_days)
         very_late_days = min(very_late_mask.sum(), working_days)
         perfect_days = min(perfect_mask.sum(), working_days)
+        early_leave_days = min(early_leave_mask.sum(), working_days)
 
-        partial_mask = daily_stats['רצופות'] & ~perfect_mask
+        has_hours_mask = daily_stats['סך שעות'] > 0
+        partial_mask = daily_stats['רצופות'] & ~perfect_mask & has_hours_mask
         partial_bonus_days = min(partial_mask.sum(), working_days)
 
-        return late_days, very_late_days, perfect_days, partial_bonus_days
+        return late_days, very_late_days, perfect_days, partial_bonus_days, early_leave_days
 
     def _calculate_base_scholarship(
             self,
@@ -125,6 +136,7 @@ class KollelScholarship:
             absent_days: int,
             attended_days: int,
             very_late_days: int,
+            early_leave_days: int,
             config: dict) -> float:
         """
         Calculate base scholarship amount based on attendance.
@@ -134,16 +146,19 @@ class KollelScholarship:
             absent_days (int): Number of absent days
             attended_days (int): Number of attended days
             very_late_days (int): Number of very late days
+            early_leave_days (int): Number of early leave days
             config (dict): Session configuration
 
         Returns:
             float: Base scholarship amount
         """
-        if late_days > MAX_ALLOWED_LATES_OR_ABSENCES or absent_days > MAX_ALLOWED_LATES_OR_ABSENCES:
+        if late_days > MAX_ALLOWED_LATES_OR_ABSENCES or \
+           absent_days > MAX_ALLOWED_LATES_OR_ABSENCES or \
+           early_leave_days > MAX_ALLOWED_LATES_OR_ABSENCES:
             # When disqualified, calculate pay per day.
             # Punctual days and regular late days receive the daily rate.
             # Very late days receive 0 for the base scholarship.
-            eligible_days = attended_days - very_late_days
+            eligible_days = attended_days - very_late_days - early_leave_days
             base = eligible_days * config['LATE_DAILY_RATE']
         else:
             base = config['BASE']
@@ -168,56 +183,19 @@ class KollelScholarship:
         Returns:
             float: Early attendance bonus amount
         """
-        late_after_nine = sum(compare_times(t, NINE_AM_TIME)
-                              for t in daily_stats['שעת כניסה'])
+        late_after_nine = sum(not is_before_nine(t)
+                      for t in daily_stats['שעת כניסה'])
 
         if absent_days <= MAX_ALLOWED_LATES_OR_ABSENCES:
             if late_after_nine <= 1:
-                return 200 if has_afternoon else 100
+                return get_max_early_bonus(has_afternoon)
 
             weekly_bonus = self._calculate_weekly_early_attendance(
                 session_data)
-            return min(weekly_bonus, 200 if has_afternoon else 100)
+            return min(weekly_bonus, get_max_early_bonus(has_afternoon))
 
         return 0
 
-    def _parse_time(self, time_str):
-        """
-        Convert string time representation to time object.
-        Handles various input types including NaT values.
-        """
-        try:
-            if pd.isna(time_str) or time_str is pd.NaT:
-                return time(0, 0)
-
-            if isinstance(time_str, str):
-                try:
-                    dt = pd.to_datetime(time_str).time()
-                    return dt
-                except (ValueError, TypeError, AttributeError) as e:
-                    print(
-                        f"Failed to parse time string: {time_str}, error: {e}")
-                    return time(0, 0)
-            elif isinstance(time_str, float):
-                if pd.isna(time_str):
-                    return time(0, 0)
-                total_seconds = int(time_str * 86400)
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                seconds = total_seconds % 60
-                return time(hours % 24, minutes, seconds)
-            elif isinstance(time_str, datetime):
-                return time_str.time()
-            elif hasattr(time_str, 'hour'):
-                return time_str
-            else:
-                print(
-                    f"Unknown time format: {time_str}, type: {type(time_str)}")
-                return time(0, 0)
-        except Exception as e:
-            print(
-                f"Error in _parse_time: {time_str}, type: {type(time_str)}, error: {e}")
-            return time(0, 0)
 
     def _calculate_session_hours(
             self,
@@ -265,7 +243,8 @@ class KollelScholarship:
             partial_bonus_days=0,
             missed_hours=working_days * hours,
             very_late_days=0,
-            early_attendance_bonus=0
+            early_attendance_bonus=0,
+            early_leave_days=0
         )
 
     def calculate_session_stats(
@@ -293,15 +272,19 @@ class KollelScholarship:
 
         session_data = session_data.copy()
         session_data['שעת כניסה'] = session_data['שעת כניסה'].apply(
-            self._parse_time)
+            parse_time)
         session_data['שעת יציאה'] = session_data['שעת יציאה'].apply(
-            self._parse_time)
+            parse_time)
 
         # Filter out days without a valid entry OR exit time.
         # A missing time is parsed as 00:00.
         # These days are treated as if the student was absent.
-        valid_times_mask = (session_data['שעת כניסה'] != time(0, 0)) & \
-                           (session_data['שעת יציאה'] != time(0, 0))
+        valid_times_mask = session_data.apply(
+            lambda row: not is_invalid_record(
+                row['שעת כניסה'], row['שעת יציאה'], config
+            )[0],
+            axis=1
+        )
         session_data = session_data[valid_times_mask]
 
         # If after filtering there's no data - return empty statistics
@@ -325,7 +308,7 @@ class KollelScholarship:
 
         attended_days = min(len(daily_stats), working_days)
 
-        late_days, very_late_days, perfect_days, partial_bonus_days = \
+        late_days, very_late_days, perfect_days, partial_bonus_days, early_leave_days = \
             self._calculate_attendance_stats(daily_stats, config, working_days)
 
         expected_hours = working_days * get_expected_hours(session_type)
@@ -335,9 +318,9 @@ class KollelScholarship:
         # Calculate absences
         absent_days = working_days - attended_days
 
-        # Full base scholarship only if: up to 2 lates AND up to 2 absences
+        # Full base scholarship only if: up to 2 lates AND up to 2 absences AND up to 2 early leaves
         base = self._calculate_base_scholarship(
-            late_days, absent_days, attended_days, very_late_days, config)
+            late_days, absent_days, attended_days, very_late_days, early_leave_days, config)
 
         daily_bonus = (perfect_days * BONUS_CONFIG['DAILY_PERFECT'] +
                        partial_bonus_days * BONUS_CONFIG['DAILY_PARTIAL'])
@@ -359,7 +342,8 @@ class KollelScholarship:
             partial_bonus_days=partial_bonus_days,
             missed_hours=missed_hours,
             very_late_days=very_late_days,
-            early_attendance_bonus=early_attendance_bonus
+            early_attendance_bonus=early_attendance_bonus,
+            early_leave_days=early_leave_days
         )
 
     def _calculate_weekly_early_attendance(
@@ -382,9 +366,9 @@ class KollelScholarship:
 
         def is_late(t):
             if isinstance(t, str):
-                t = self._parse_time(t)
-            return compare_times(t, NINE_AM_TIME)
-
+                t = parse_time(t)
+            return not is_before_nine(t)
+        
         weekly_lates = (
             attendance_data
             .groupby('week')
@@ -419,8 +403,8 @@ class KollelScholarship:
         # Identify days without valid exit time
         warnings = []
         student_data_copy = student_data.copy()
-        student_data_copy['שעת כניסה_parsed'] = student_data_copy['שעת כניסה'].apply(self._parse_time)
-        student_data_copy['שעת יציאה_parsed'] = student_data_copy['שעת יציאה'].apply(self._parse_time)
+        student_data_copy['שעת כניסה_parsed'] = student_data_copy['שעת כניסה'].apply(parse_time)
+        student_data_copy['שעת יציאה_parsed'] = student_data_copy['שעת יציאה'].apply(parse_time)
 
         missing_entry_mask = student_data_copy['שעת כניסה_parsed'] == time(0, 0)
         missing_exit_mask = student_data_copy['שעת יציאה_parsed'] == time(0, 0)
@@ -461,7 +445,7 @@ class KollelScholarship:
 
         # Warning about early attendance bonus reduction
         if not morning_data.empty:
-            max_bonus = 200 if has_afternoon else 100
+            max_bonus = get_max_early_bonus(has_afternoon)
             if morning_stats.early_attendance_bonus < max_bonus and \
                morning_stats.absent_days > MAX_ALLOWED_LATES_OR_ABSENCES:
                 warnings.append(
@@ -486,7 +470,7 @@ class KollelScholarship:
                 monthly_tier2_bonus = BONUS_CONFIG['MONTHLY_TIER2']
 
             if (morning_stats.absent_days == 0 and afternoon_stats.absent_days ==
-                    0 and                     morning_stats.late_days == 0 and afternoon_stats.late_days == 0):
+                    0 and morning_stats.late_days == 0 and afternoon_stats.late_days == 0):
                 perfect_attendance_bonus = BONUS_CONFIG['PERFECT_ATTENDANCE']
 
         # Handle NaN in names
