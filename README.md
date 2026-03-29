@@ -94,10 +94,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License.  
 See the [LICENSE](LICENSE) file for details.
-
-
-## Usage Restrictions
-
-- This software is provided for **personal and educational use only**.  
-- **Commercial use is strictly prohibited** without explicit permission.  
-- Modifications and redistribution are allowed, but must comply with the Creative Commons Attribution-NonCommercial 4.0 International License.
